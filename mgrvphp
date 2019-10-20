@@ -1,0 +1,188 @@
+#!/bin/bash
+
+# check root
+if [[ $EUID -ne 0 ]]; then
+    echo "This script must be run as root"
+    exit 0
+fi
+
+echo "You can enter multiple versions through 'space'."
+echo "Enter php version/versions(for example 5.6.30):"
+read -p ">" vers
+echo "Create simlinks in /usr/bin?(y/N)"
+read -p ">" item1
+if [ "$item1" == "y" ]||[ "$item1" == "Y" ]; then
+	if ! [ -f /usr/local/vesta/web/index.php ]; then
+			echo 'VestaCP not found. Skip.'
+        else
+                	echo "Create VestaCP web templates?(y/N)"
+                	read -p ">" item2
+	fi
+fi
+
+if ! [ -d /opt/php ]||! [ -d /opt/php/src ]||! [ -d /opt/php/src/bzips ]; then
+	#Install dependencies
+	echo "If you select 'No', then you need to set the dependencies yourself. Otherwise, the installation will fail."
+	echo "Install packages and dependencies?(y/N)"
+	read -p ">" item3
+	if [ "$item3" == "y" ]||[ "$item3" == "Y" ]; then
+		echo "Start the installation of packages and dependencies. Please wait..."; sleep 5
+		apt-get update 
+		apt-get install curl wget mysql-server make autoconf gcc bison libxml2 libxml2-dev libcurl4-openssl-dev pkg-config libssl-dev bzip2 libbz2-dev libjpeg-dev libpng-dev libxpm-dev libfreetype6-dev libgmp-dev libgmp3-dev libmcrypt-dev libmysqlclient-dev libpspell-dev librecode-dev libpcre3-dev libpcre++-dev libxslt1-dev libonig-dev libmcrypt-dev libreadline-dev libmhash-dev -y
+		ln -s /usr/include/qdbm/depot.h /usr/include/depot.h > /dev/null 2>&1
+		ln -s /usr/lib/libc-client.a /lib/x86_64-linux-gnu/libc-client.a > /dev/null 2>&1
+		ln -s /usr/lib/libc-client.a /usr/lib/x86_64-linux-gnu/libc-client.a > /dev/null 2>&1
+		mkdir /usr/include/freetype2/freetype > /dev/null 2>&1
+		ln -s /usr/include/freetype2/freetype.h /usr/include/freetype2/freetype/freetype.h > /dev/null 2>&1
+	fi
+	mkdir /opt/ > /dev/null 2>&1
+	mkdir /opt/php/ > /dev/null 2>&1
+	mkdir /opt/php/src > /dev/null 2>&1
+	mkdir /opt/php/src/bzips > /dev/null 2>&1
+	wget --no-check-certificate http://downloads3.ioncube.com/loader_downloads/ioncube_loaders_lin_x86-64.tar.gz
+	tar -xzf ioncube_loaders_lin_x86-64.tar.gz
+	mkdir /opt/php/ext > /dev/null 2>&1
+	mv ./ioncube /opt/php/ext/
+fi
+
+for ver in $vers; do
+echo "Start install PHP" $ver
+sleep 5
+if ! [ -d /opt/php/src/php-$ver ]; then
+ if ! [ -f /opt/php/src/bzips/php-$ver.tar.bz2 ]; then
+ 	#Download src php
+ 	link=`curl https://www.php.net/releases/|grep $ver.tar.bz2|cut -d '"' -f2`
+ 	if [[ $link = "" ]]
+ 	then
+ 		link=`curl https://www.php.net/distributions/php-|grep $ver.tar.bz2|cut -d '"' -f2`
+ 		link=`echo "https://www.php.net"$link`
+		links=`curl $link|grep $ver.tar.bz2|cut -d '"' -f4`
+			for link in $links; do
+			wget -O /opt/php/src/bzips/php-$ver.tar.bz2 $link
+			if [ -f /opt/php/src/bzips/php-$ver.tar.bz2 ]; then
+				break
+			fi
+			done
+ 	else
+ 		l1=`echo $link| sed 's/^\(.\).*/\1/'`
+ 		if [ $l1 = "/" ]
+ 		then
+ 			link=`echo "https://www.php.net"$link`
+			links=`curl $link|grep $ver.tar.bz2|cut -d '"' -f4`
+                        for link in $links; do
+                        wget -O /opt/php/src/bzips/php-$ver.tar.bz2 $link
+                        if [ -f /opt/php/src/bzips/php-$ver.tar.bz2 ]; then
+                                break
+                        fi
+                        done
+ 		fi
+ 	fi
+	if ! [ -f /opt/php/src/bzips/php-$ver.tar.bz2 ]; then
+	 	wget -O /opt/php/src/bzips/php-$ver.tar.bz2 $link
+	fi
+ 	if ! [ -f /opt/php/src/bzips/php-$ver.tar.bz2 ]; then
+ 		echo "PHP ${ver} not found"
+ 		echo "Please check correct version and re-run script"
+ 		exit 0
+ 	fi
+	tar xjf /opt/php/src/bzips/php-$ver.tar.bz2 -C /opt/php/src/
+        mkdir /opt/php/php-$ver > /dev/null 2>&1
+ else
+ 	tar xjf /opt/php/src/bzips/php-$ver.tar.bz2 -C /opt/php/src/
+ 	mkdir /opt/php/php-$ver > /dev/null 2>&1
+ fi
+fi
+
+# Configure, make and install
+sl=`echo $ver|cut -d . -f 1``echo $ver|cut -d . -f 2`
+if ! [ -f /opt/php/options ]; then
+ if [[ $sl = "52" ]]
+ then
+	wget --no-check-certificate https://raw.githubusercontent.com/petranikin/mgrvphp/master/options52 -O /opt/php/src/php-$ver/options.sh
+	cd /opt/php/src/php-$ver/
+	wget --no-check-certificate https://raw.githubusercontent.com/petranikin/mgrvphp/master/php52-backports-20130717.patch
+	patch -p1 -i php52-backports-*.patch
+ else
+	wget --no-check-certificate https://raw.githubusercontent.com/petranikin/mgrvphp/master/options -O /opt/php/src/php-$ver/options.sh
+ fi
+else
+ echo "/opt/php/options found"
+ cp /opt/php/options /opt/php/src/php-$ver/options.sh
+fi
+sed -i -e "s/version/${ver}/g" /opt/php/src/php-$ver/options.sh
+cd /opt/php/src/php-$ver/
+bash options.sh
+rez=`echo $?`
+if [[ $rez -ne 0 ]]
+	 then
+	 rm /opt/php/src/php-$ver/options.sh
+	 exit 0
+fi
+rm /opt/php/src/php-$ver/options.sh
+make
+make install
+
+#Check install php. Create simlinks and templates
+if ! [ -f /opt/php/php-$ver/bin/php-cgi ]; then
+ echo -e "Ops. Something is wrong.."
+ exit 0
+else
+ case "$item1" in
+    y|Y) echo "Create simlink"
+        rm /usr/bin/php$sl > /dev/null 2>&1
+	ln -s /opt/php/php-$ver/bin/php-cgi /usr/bin/php$sl
+	if [ -f /usr/local/vesta/data/templates/web/apache2/php$sl.sh ]||[ -f /usr/local/vesta/data/templates/web/apache2/php${sl}-fcgid.sh ]
+	then  echo "VestaCP web template found"
+	else
+		case "$item2" in
+		    y|Y) echo "Create template"
+			wget --no-check-certificate -O /usr/local/vesta/data/templates/web/apache2/php$sl.sh https://c.vestacp.com/0.9.8/debian/8/templates/web/apache2/phpcgi.sh
+			chmod 755 /usr/local/vesta/data/templates/web/apache2/php$sl.sh
+			wget --no-check-certificate -O /usr/local/vesta/data/templates/web/apache2/php$sl.stpl https://c.vestacp.com/0.9.8/debian/8/templates/web/apache2/phpcgi.stpl
+			wget --no-check-certificate -O /usr/local/vesta/data/templates/web/apache2/php$sl.tpl https://c.vestacp.com/0.9.8/debian/8/templates/web/apache2/phpcgi.tpl
+			sed -i -e "s|/usr/bin/php-cgi|/usr/bin/php${sl}|g" /usr/local/vesta/data/templates/web/apache2/php$sl.sh
+
+			wget --no-check-certificate -O /usr/local/vesta/data/templates/web/apache2/php${sl}-fcgid.sh https://c.vestacp.com/0.9.8/debian/8/templates/web/apache2/phpfcgid.sh
+                        chmod 755 /usr/local/vesta/data/templates/web/apache2/php${sl}-fcgid.sh
+                        wget --no-check-certificate -O /usr/local/vesta/data/templates/web/apache2/php${sl}-fcgid.stpl https://c.vestacp.com/0.9.8/debian/8/templates/web/apache2/phpfcgid.stpl
+                        wget --no-check-certificate -O /usr/local/vesta/data/templates/web/apache2/php${sl}-fcgid.tpl https://c.vestacp.com/0.9.8/debian/8/templates/web/apache2/phpfcgid.tpl
+                        sed -i -e "s|/usr/bin/php-cgi|/usr/bin/php${sl}|g" /usr/local/vesta/data/templates/web/apache2/php${sl}-fcgid.sh
+
+
+				cgi=`apachectl -t -D DUMP_MODULES|grep cgi_module`
+				if [[ $cgi = "" ]]
+				then
+					a2enmod cgi
+					service apache2 restart
+				fi
+		;;
+		esac
+	fi
+ ;;
+ esac
+
+aver=`apachectl -V|head -n1|cut -d' ' -f3|cut -d'/' -f2`
+aver=`printf ${aver}'\n2.3.6\n' | sort -V|head -n1`
+if [[ $aver != "2.3.6" ]]; then
+	find /usr/local/vesta/data/templates/web/apache2/ -type f -name "*.*tpl" | xargs sed -i 's/IncludeOptional/Include/g'
+fi
+
+mkdir /opt/php/php-$ver/etc/conf.d
+
+ioncube=`echo "/opt/php/ext/ioncube/ioncube_loader_lin_"``echo $ver|cut -d . -f 1``echo "."``echo $ver|cut -d . -f 2``echo ".so"`
+if [ -f $ioncube ]
+	then
+	echo "zend_extension = "$ioncube >> /opt/php/php-$ver/etc/conf.d/ext.ini
+fi
+opcache=`find /opt/php/php-$ver/ -name opcache.so`
+if [ -f $opcache ]
+	then
+	echo "zend_extension = "$opcache >> /opt/php/php-$ver/etc/conf.d/ext.ini
+fi
+
+echo "-----------------------------------------------"
+echo "PHP-${ver} installed in /opt/php/php-${ver}"
+echo -e "\033[0;31mDonate now:\033[0m https://anikin.pw/donate.html"
+echo "-----------------------------------------------"
+fi
+done
